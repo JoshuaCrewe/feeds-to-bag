@@ -1,6 +1,0 @@
-[Unit]
-Description=Feeds to Pocket
-
-[Service]
-Type=oneshot
-ExecStart=feeds-to-pocket ~/feeds-to-pocket.yaml

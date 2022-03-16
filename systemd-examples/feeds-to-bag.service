@@ -1,0 +1,6 @@
+[Unit]
+Description=Feeds to Bag
+
+[Service]
+Type=oneshot
+ExecStart=feeds-to-bag ~/feeds-to-bag.yaml

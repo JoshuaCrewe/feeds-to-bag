@@ -23,7 +23,7 @@ extern crate serde_yaml;
 extern crate url;
 extern crate url_serde;
 
-mod pocket;
+mod bag;
 
 use std::error::Error;
 use std::fmt::{self, Display};
@@ -38,12 +38,12 @@ use reqwest::{Client, StatusCode};
 use reqwest::header::{self, HeaderValue};
 use url::Url;
 
-use pocket::Pocket;
+use bag::Bag;
 
 fn main() {
-    let matches = App::new("Feeds to Pocket")
+    let matches = App::new("Feeds to Bag")
         .author("Francis Gagné <fragag1@gmail.com>")
-        .about("Sends items from your RSS and Atom feeds to your Pocket list.")
+        .about("Sends items from your RSS and Atom feeds to your Wallabag list.")
         .version(crate_version!())
         .arg(Arg::with_name(args::CONFIG)
             .help("A YAML file containing your feeds configuration.")
@@ -55,7 +55,7 @@ fn main() {
         .subcommand(SubCommand::with_name(subcommands::set_consumer_key::NAME)
             .about("Sets the consumer key in the configuration file.")
             .arg(Arg::with_name(subcommands::set_consumer_key::args::KEY)
-                .help("A consumer key obtained from Pocket's website. \
+                .help("A consumer key obtained from you Wallabag instance. \
                        You must create your own application \
                        at https://getpocket.com/developer/apps/new \
                        to obtain a consumer key; \
@@ -63,24 +63,24 @@ fn main() {
                        Make sure your application has at least the \"Add\" permission.")
                 .required(true)))
         .subcommand(SubCommand::with_name(subcommands::login::NAME)
-            .about("Obtains and saves an access token from Pocket. \
+            .about("Obtains and saves an access token from Wallabag. \
                     This will print a URL on the standard output, \
                     which you must open in a web browser \
-                    in order to grant your application access to your Pocket account. \
+                    in order to grant your application access to your Wallabag account. \
                     Once authorization has been obtained, \
                     an access token is saved in the configuration file, \
-                    which will be used to queue up entries in your Pocket list."))
+                    which will be used to queue up entries in your Wallabag list."))
         .subcommand(SubCommand::with_name(subcommands::add::NAME)
             .about("Adds a feed to your feeds configuration or updates an existing feed in your feeds configuration.")
             .arg(Arg::with_name(subcommands::add::args::UNREAD)
                 .long("--unread")
                 .help("Consider all the entries in the feed to be unread. \
-                       All entries will be sent to Pocket immediately. \
+                       All entries will be sent to Wallabag immediately. \
                        By default, all the entries present when the feed is added \
-                       are considered read and are not sent to Pocket."))
+                       are considered read and are not sent to Wallabag."))
             .arg(Arg::with_name(subcommands::add::args::TAGS)
                 .long("--tags")
-                .help("A comma-separated list of tags to attach to the URLs sent to Pocket.")
+                .help("A comma-separated list of tags to attach to the URLs sent to Wallabag.")
                 .takes_value(true))
             .arg(Arg::with_name(subcommands::add::args::FEED_URL)
                 .help("The URL of the feed to add.")
@@ -259,14 +259,14 @@ fn set_consumer_key(config: &mut Configuration, args: &ArgMatches) {
 
 fn login(config: &mut Configuration) -> Result<(), ErrorWithContext> {
     let client = Client::new();
-    let mut pocket = try_with_context!(get_pocket(config, client), "unable to perform authorization");
+    let mut bag = try_with_context!(get_bag(config, client), "unable to perform authorization");
 
     if config.access_token.is_some() {
         println!("note: There's already an access token in the configuration file. \
             Proceeding will overwrite this access token.");
     }
 
-    let auth_url = try_with_context!(pocket.get_auth_url(), "unable to get authorization URL for Pocket");
+    let auth_url = try_with_context!(bag.get_auth_url(), "unable to get authorization URL for Wallabag");
     println!("Go to the following webpage to login: {}", auth_url);
     println!("Then, press Enter to continue.");
     loop {
@@ -274,9 +274,9 @@ fn login(config: &mut Configuration) -> Result<(), ErrorWithContext> {
         let mut _input = String::new();
         try_with_context!(std::io::stdin().read_line(&mut _input), "unable to read from standard input");
 
-        match pocket.authorize() {
+        match bag.authorize() {
             Ok(_) => {
-                config.access_token = Some(String::from(pocket.access_token().unwrap()));
+                config.access_token = Some(String::from(bag.access_token().unwrap()));
                 return Ok(());
             }
             Err(e) => {
@@ -290,10 +290,10 @@ fn login(config: &mut Configuration) -> Result<(), ErrorWithContext> {
 
 fn sync(config: &mut Configuration) -> Result<(), ErrorWithContext> {
     let client = Client::new();
-    let mut pocket = try_with_context!(get_authenticated_pocket(config, client.clone()), "unable to sync");
+    let mut bag = try_with_context!(get_authenticated_bag(config, client.clone()), "unable to sync");
 
     for feed in &mut config.feeds {
-        process_feed(feed, Some(&mut pocket), &client).unwrap_or_else(|e| {
+        process_feed(feed, Some(&mut bag), &client).unwrap_or_else(|e| {
             let _ = writeln!(io::stderr(), "{}", e);
         });
     }
@@ -316,9 +316,9 @@ fn add(config: &mut Configuration, args: &ArgMatches) -> Result<(), ErrorWithCon
         return Ok(());
     }
 
-    let send_to_pocket = args.is_present(subcommands::add::args::UNREAD);
-    let mut pocket = if send_to_pocket {
-        Some(try_with_context!(get_authenticated_pocket(config, client.clone()), "unable to add feed"))
+    let send_to_bag = args.is_present(subcommands::add::args::UNREAD);
+    let mut bag = if send_to_bag {
+        Some(try_with_context!(get_authenticated_bag(config, client.clone()), "unable to add feed"))
     } else {
         None
     };
@@ -335,7 +335,7 @@ fn add(config: &mut Configuration, args: &ArgMatches) -> Result<(), ErrorWithCon
 
     let feed = config.feeds.last_mut().unwrap();
 
-    process_feed(feed, pocket.as_mut(), &client)
+    process_feed(feed, bag.as_mut(), &client)
 }
 
 fn remove(config: &mut Configuration, args: &ArgMatches) -> Result<(), ErrorWithContext> {
@@ -350,23 +350,23 @@ fn remove(config: &mut Configuration, args: &ArgMatches) -> Result<(), ErrorWith
     Ok(())
 }
 
-fn get_pocket(config: &Configuration, client: Client) -> Result<Pocket, PocketSetupError> {
+fn get_bag(config: &Configuration, client: Client) -> Result<Bag, BagSetupError> {
     match config.consumer_key {
-        Some(ref consumer_key) => Ok(Pocket::new(consumer_key, config.access_token.as_ref().map(|x| x.as_ref()), client)),
-        None => Err(PocketSetupError::MissingConsumerKey),
+        Some(ref consumer_key) => Ok(Bag::new(consumer_key, config.access_token.as_ref().map(|x| x.as_ref()), client)),
+        None => Err(BagSetupError::MissingConsumerKey),
     }
 }
 
-fn get_authenticated_pocket(config: &Configuration, client: Client) -> Result<Pocket, PocketSetupError> {
-    get_pocket(config, client).and_then(|pocket| {
+fn get_authenticated_bag(config: &Configuration, client: Client) -> Result<Bag, BagSetupError> {
+    get_bag(config, client).and_then(|bag| {
         match config.access_token {
-            Some(_) => Ok(pocket),
-            None => Err(PocketSetupError::MissingAccessToken),
+            Some(_) => Ok(bag),
+            None => Err(BagSetupError::MissingAccessToken),
         }
     })
 }
 
-fn process_feed(feed: &mut FeedConfiguration, mut pocket: Option<&mut Pocket>, client: &Client) -> Result<(), ErrorWithContext> {
+fn process_feed(feed: &mut FeedConfiguration, mut bag: Option<&mut Bag>, client: &Client) -> Result<(), ErrorWithContext> {
     println!("downloading {}", feed.url);
     let feed_response = try_with_context!(fetch(feed, client),
         format!("failed to download feed at {url}", url=feed.url));
@@ -403,19 +403,19 @@ fn process_feed(feed: &mut FeedConfiguration, mut pocket: Option<&mut Pocket>, c
             // Ignore entries we've processed previously.
             if !feed.processed_entries.iter().rev().any(|x| x == &entry_url) {
                 let is_processed =
-                    if let Some(ref mut pocket) = pocket {
+                    if let Some(ref mut bag) = bag {
                         match Url::parse(&entry_url) {
                             Ok(parsed_entry_url) => {
-                                // Push the entry to Pocket.
+                                // Push the entry to Wallabag.
                                 // Only consider the entry processed if the push succeeded.
                                 // That means that if it failed, we'll try again next time.
-                                println!("pushing {} to Pocket", entry_url);
+                                println!("pushing {} to Wallabag", entry_url);
                                 let tags = if feed.tags.is_empty() { None } else { Some(&*feed.tags) };
-                                let push_result = pocket.add(&parsed_entry_url, None, tags, None);
+                                let push_result = bag.add(&parsed_entry_url, None, tags, None);
                                 match push_result {
                                     Ok(_) => true,
                                     Err(error) => {
-                                        println!("error while adding URL {url} to Pocket:\n  {error}",
+                                        println!("error while adding URL {url} to Wallabag:\n  {error}",
                                             url=entry_url, error=Indented(&error));
                                         false
                                     }
@@ -430,7 +430,7 @@ fn process_feed(feed: &mut FeedConfiguration, mut pocket: Option<&mut Pocket>, c
                             }
                         }
                     } else {
-                        // If `pocket` is None,
+                        // If `Wallabag` is None,
                         // then we just want to mark the current feed entries as processed,
                         // on the assumption that the user has read them already.
                         true
@@ -438,7 +438,7 @@ fn process_feed(feed: &mut FeedConfiguration, mut pocket: Option<&mut Pocket>, c
 
                 if is_processed {
                     // Remember that we've processed this entry
-                    // so we don't try to send it to Pocket next time.
+                    // so we don't try to send it to Wallabag next time.
                     feed.processed_entries.push(entry_url.into());
                 } else {
                     all_processed_successfully = false;
@@ -447,7 +447,7 @@ fn process_feed(feed: &mut FeedConfiguration, mut pocket: Option<&mut Pocket>, c
         }
 
         // Don't update the last modified and last ETag
-        // if any push to Pocket failed
+        // if any push to Wallabag failed
         // so we can try again next time.
         if all_processed_successfully {
             feed.last_modified = last_modified.and_then(|v| v.to_str().ok().map(|s| s.into()));
@@ -460,7 +460,7 @@ fn process_feed(feed: &mut FeedConfiguration, mut pocket: Option<&mut Pocket>, c
 
 fn fetch(feed: &FeedConfiguration, client: &Client) -> Result<FeedResponse, ErrorWithContext> {
     let mut request = client.get(&feed.url);
-    request = request.header(header::USER_AGENT, HeaderValue::from_static(concat!("feeds-to-pocket/", env!("CARGO_PKG_VERSION"))));
+    request = request.header(header::USER_AGENT, HeaderValue::from_static(concat!("feeds-to-bag/", env!("CARGO_PKG_VERSION"))));
 
     // Add an If-Modified-Since header if we have a Last-Modified date.
     if let Some(ref last_modified) = feed.last_modified {
@@ -604,12 +604,12 @@ impl Error for ErrorWithContext {
 quick_error! {
     #[allow(enum_variant_names)]
     #[derive(Debug)]
-    enum PocketSetupError {
+    enum BagSetupError {
         MissingConsumerKey {
-            description("The consumer key is not set in the configuration file. Run `feeds-to-pocket help set-consumer-key` for help and instructions.")
+            description("The consumer key is not set in the configuration file. Run `feeds-to-bag help set-consumer-key` for help and instructions.")
         }
         MissingAccessToken {
-            description("The access token is not set in the configuration file. Run `feeds-to-pocket help login` for help and instructions.")
+            description("The access token is not set in the configuration file. Run `feeds-to-bag help login` for help and instructions.")
         }
     }
 }

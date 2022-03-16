@@ -1,11 +1,11 @@
 [package]
-name = "feeds-to-pocket"
+name = "feeds-to-bag"
 version = "0.1.6"
-authors = ["Francis Gagné <fragag1@gmail.com>"]
-description = "Sends items from your RSS and Atom feeds to your Pocket list."
-repository = "https://github.com/FraGag/feeds-to-pocket"
+authors = ["Francis Gagné <fragag1@gmail.com>", "JoshuaCrewe <git@joshuacrewe.co.uk>"]
+description = "Sends items from your RSS and Atom feeds to your Wallabag list."
+repository = "https://github.com/joshuaCrewe/feeds-to-bag"
 readme = "README.md"
-keywords = ["atom", "feed", "pocket", "rss", "syndication"]
+keywords = ["atom", "feed", "wallabag", "rss", "syndication"]
 license = "MIT/Apache-2.0"
 exclude = [".travis.yml"]
 
