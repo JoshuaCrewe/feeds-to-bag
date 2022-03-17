@@ -71,7 +71,7 @@ impl Error for BagError {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<& dyn Error> {
         match *self {
             BagError::Http(ref e) => Some(e),
             BagError::Io(ref e) => Some(e),
@@ -161,7 +161,7 @@ impl Bag {
     }
 
     fn request<Req: Serialize>(&self, url: &str, request: &Req) -> BagResult<String> {
-        let request = try!(serde_json::to_string(request));
+        let request = (serde_json::to_string(request))?;
 
         let app_json = "application/json";
 

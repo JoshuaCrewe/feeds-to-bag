@@ -144,17 +144,17 @@ fn run(args: &ArgMatches) -> Result<(), ErrorWithContext> {
     if args.subcommand_name() == Some(subcommands::init::NAME) {
         init(args)
     } else {
-        let mut config = try!(load_config(args));
+        let mut config = (load_config(args))?;
 
         // Dispatch based on the subcommand
-        try!(match args.subcommand() {
+        (match args.subcommand() {
             ("", _) => sync(&mut config),
             (subcommands::set_consumer_key::NAME, Some(args)) => Ok(set_consumer_key(&mut config, &args)),
             (subcommands::login::NAME, _) => login(&mut config),
             (subcommands::add::NAME, Some(args)) => add(&mut config, &args),
             (subcommands::remove::NAME, Some(args)) => remove(&mut config, &args),
             (_, _) => unreachable!(),
-        });
+        })?;
 
         save_config(&config, args)
     }
@@ -217,7 +217,7 @@ fn save_config(config: &Configuration, args: &ArgMatches) -> Result<(), ErrorWit
     }
 
     // Rename the original configuration file.
-    try!(rename(config_file_name, old_config_file_name));
+    (rename(config_file_name, old_config_file_name))?;
 
     // Rename the new configuration file.
     let rename_new_result = rename(new_config_file_name, config_file_name);
@@ -377,7 +377,7 @@ fn process_feed(feed: &mut FeedConfiguration, mut bag: Option<&mut Bag>, client:
             format!("failed to parse feed at {url} as either RSS or Atom", url=feed.url));
 
         let (mut rss_entries, mut atom_entries);
-        let entries: &mut Iterator<Item=&str> = match parsed_feed {
+        let entries: &mut dyn Iterator<Item=&str> = match parsed_feed {
             Feed::RSS(ref rss) => {
                 rss_entries = rss.items().iter().rev().flat_map(|item| item.link());
                 &mut rss_entries
@@ -572,12 +572,12 @@ impl Error for FeedError {
 
 #[derive(Debug)]
 struct ErrorWithContext {
-    error: Box<Error>,
+    error: Box<dyn Error>,
     context: String
 }
 
 impl ErrorWithContext {
-    fn new<S: Into<String>>(error: Box<Error>, context: S) -> ErrorWithContext {
+    fn new<S: Into<String>>(error: Box< dyn Error>, context: S) -> ErrorWithContext {
         ErrorWithContext {
             error: error,
             context: context.into(),
@@ -596,7 +596,7 @@ impl Error for ErrorWithContext {
         &self.context
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<& dyn Error> {
         Some(&*self.error)
     }
 }
@@ -626,7 +626,7 @@ quick_error! {
 quick_error! {
     #[derive(Debug)]
     enum Errors {
-        Errors(errors: Vec<Box<Error>>) {
+        Errors(errors: Vec<Box< dyn Error>>) {
             description("Multiple errors occurred.")
             display("{}", errors.iter().map(|error| format!("- {}", Indented(error))).collect::<Vec<_>>().join("\n"))
         }
@@ -643,7 +643,7 @@ quick_error! {
 }
 
 impl Errors {
-    fn new(errors: Vec<Box<Error>>) -> Errors {
+    fn new(errors: Vec<Box< dyn Error>>) -> Errors {
         Errors::Errors(errors)
     }
 }
@@ -673,10 +673,10 @@ impl<'a: 'f, 'f> fmt::Write for IndentedWrite<'a, 'f> {
     fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
         let mut lines = s.split('\n');
         if let Some(line) = lines.next() {
-            try!(self.0.write_str(line));
+            (self.0.write_str(line))?;
             for line in lines {
-                try!(self.0.write_str("\n  "));
-                try!(self.0.write_str(line));
+                (self.0.write_str("\n  "))?;
+                (self.0.write_str(line))?;
             }
         }
 
